@@ -85,13 +85,34 @@ def update_zsh_path(app_dir: Path):
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description=(
+            "Install a Linux AppImage under /opt/<name>, add a .desktop launcher, "
+            "and append the app directory to the real user's ~/.zshrc PATH. "
+            "Must be run with sudo; uses Zenity dialogs for the app name (if not given) "
+            "and for choosing an icon image."
+        ),
+        epilog=(
+            "Usage flow:\n"
+            "  1. sudo python3 install-appimage.py /path/to/app.AppImage\n"
+            "  2. If --name is omitted, enter the display name in the dialog.\n"
+            "  3. Pick a PNG, SVG, XPM, or ICO file for the launcher icon.\n"
+            "  4. The AppImage is copied to /opt/<name>/, owned by the user who invoked sudo.\n"
+            "\n"
+            "Requires: root, Zenity (e.g. apt install zenity), and a graphical session for dialogs."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("appimage", help="Path to the .AppImage file to install")
+    parser.add_argument(
+        "--name",
+        metavar="NAME",
+        help="Application name and install folder under /opt (Zenity prompt if omitted)",
+    )
+    args = parser.parse_args()
+
     check_root()
     check_zenity()
-
-    parser = argparse.ArgumentParser(description="Install an AppImage to /opt/")
-    parser.add_argument("appimage", help="Path to the .AppImage file")
-    parser.add_argument("--name", help="Application name (prompted via dialog if omitted)")
-    args = parser.parse_args()
 
     appimage_path = Path(args.appimage).resolve()
     if not appimage_path.is_file():
