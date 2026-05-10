@@ -90,7 +90,8 @@ def main():
             "Install a Linux AppImage under /opt/<name>, add a .desktop launcher, "
             "and append the app directory to the real user's ~/.zshrc PATH. "
             "Must be run with sudo; uses Zenity dialogs for the app name (if not given) "
-            "and for choosing an icon image."
+            "and for choosing an icon image. By default the .desktop Exec line appends "
+            "--no-sandbox; use --sandbox to launch the AppImage without that flag."
         ),
         epilog=(
             "Usage flow:\n"
@@ -98,6 +99,9 @@ def main():
             "  2. If --name is omitted, enter the display name in the dialog.\n"
             "  3. Pick a PNG, SVG, XPM, or ICO file for the launcher icon.\n"
             "  4. The AppImage is copied to /opt/<name>/, owned by the user who invoked sudo.\n"
+            "\n"
+            "Use --sandbox so the menu launcher runs only the AppImage (no --no-sandbox). "
+            "The default is to add --no-sandbox for Electron-style apps that need it.\n"
             "\n"
             "Requires: root, Zenity (e.g. apt install zenity), and a graphical session for dialogs."
         ),
@@ -107,7 +111,12 @@ def main():
     parser.add_argument(
         "--name",
         metavar="NAME",
-        help="Application name and install folder under /opt (Zenity prompt if omitted)",
+        help="Application name and install folder under /opt",
+    )
+    parser.add_argument(
+        "--sandbox",
+        action="store_true",
+        help="Do not append --no-sandbox to the .desktop Exec command (default: add --no-sandbox)",
     )
     args = parser.parse_args()
 
@@ -137,11 +146,12 @@ def main():
     chown_recursive(app_dir, real_user)
     print(f"Ownership set to {real_user} for {app_dir}")
 
+    exec_line = f"Exec={dest_appimage}\n" if args.sandbox else f"Exec={dest_appimage} --no-sandbox\n"
     desktop_entry = (
         "[Desktop Entry]\n"
         "Type=Application\n"
         f"Name={name}\n"
-        f"Exec={dest_appimage} --no-sandbox\n"
+        f"{exec_line}"
         f"Icon={icon_dest}\n"
         "Terminal=false\n"
         f"StartupWMClass={name.lower()}\n"
