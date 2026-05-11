@@ -84,26 +84,83 @@ def update_zsh_path(app_dir: Path):
     print(f"Added {app_dir} to $PATH in {zshrc}")
 
 
+def find_existing_icon(app_dir: Path, name: str) -> Path | None:
+    """Return an icon path under app_dir from the .desktop file or standard filenames."""
+    desktop_path = Path(f"/usr/share/applications/{name}.desktop")
+    if desktop_path.is_file():
+        for line in desktop_path.read_text().splitlines():
+            line = line.strip()
+            if not line.startswith("Icon="):
+                continue
+            raw = line[5:].strip()
+            if not raw or raw.startswith("#"):
+                break
+            p = Path(raw)
+            if not p.is_absolute():
+                p = app_dir / p
+            if p.is_file():
+                try:
+                    p.resolve().relative_to(app_dir.resolve())
+                    return p
+                except ValueError:
+                    pass
+            break
+    for ext in (".png", ".svg", ".xpm", ".ico"):
+        candidate = app_dir / f"{name}{ext}"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def write_desktop_entry(
+    name: str,
+    dest_appimage: Path,
+    icon_dest: Path,
+    desktop_path: Path,
+    sandbox: bool,
+):
+    exec_line = f"Exec={dest_appimage}\n" if sandbox else f"Exec={dest_appimage} --no-sandbox\n"
+    desktop_entry = (
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        f"Name={name}\n"
+        f"{exec_line}"
+        f"Icon={icon_dest}\n"
+        "Terminal=false\n"
+        f"StartupWMClass={name.lower()}\n"
+        "Categories=Utility;\n"
+    )
+    desktop_path.write_text(desktop_entry)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=(
             "Install a Linux AppImage under /opt/<name>, add a .desktop launcher, "
             "and append the app directory to the real user's ~/.zshrc PATH. "
-            "Must be run with sudo; uses Zenity dialogs for the app name (if not given) "
-            "and for choosing an icon image. By default the .desktop Exec line appends "
+            "If /opt/<name> already exists (same --name or dialog name), only the "
+            "AppImage file is replaced; the icon is reused when present, otherwise "
+            "you are prompted to pick one. "
+            "Must be run with sudo; uses Zenity dialogs for the app name (if not given with --name) "
+            "and for choosing an icon when needed. By default the .desktop Exec line appends "
             "--no-sandbox; use --sandbox to launch the AppImage without that flag."
         ),
         epilog=(
-            "Usage flow:\n"
+            "Usage flow (new install):\n"
             "  1. sudo python3 install-appimage.py /path/to/app.AppImage\n"
             "  2. If --name is omitted, enter the display name in the dialog.\n"
             "  3. Pick a PNG, SVG, XPM, or ICO file for the launcher icon.\n"
             "  4. The AppImage is copied to /opt/<name>/, owned by the user who invoked sudo.\n"
             "\n"
+            "Updating: run again with the new .AppImage file and the same name (--name or dialog). "
+            "The script overwrites /opt/<name>/<name>.AppImage, fixes permissions and ownership, "
+            "refreshes the .desktop entry, and only asks for an icon if none is found under /opt/<name>.\n"
+            "\n"
             "Use --sandbox so the menu launcher runs only the AppImage (no --no-sandbox). "
             "The default is to add --no-sandbox for Electron-style apps that need it.\n"
             "\n"
-            "Requires: root, Zenity (e.g. apt install zenity), and a graphical session for dialogs."
+            "Requires: root, Zenity when a dialog is needed (e.g. apt install zenity), "
+            "and a graphical session for those dialogs."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -121,18 +178,50 @@ def main():
     args = parser.parse_args()
 
     check_root()
-    check_zenity()
 
     appimage_path = Path(args.appimage).resolve()
     if not appimage_path.is_file():
         sys.exit(f"Error: '{appimage_path}' is not a valid file.")
 
-    name = args.name if args.name else zenity_entry("Enter a name for the application:")
+    if args.name:
+        name = args.name
+    else:
+        check_zenity()
+        name = zenity_entry("Enter a name for the application:")
 
     app_dir = Path(f"/opt/{name}")
+    dest_appimage = app_dir / f"{name}.AppImage"
+    desktop_path = Path(f"/usr/share/applications/{name}.desktop")
+    real_user = get_real_user()
+
+    if app_dir.is_dir():
+        shutil.copy2(appimage_path, dest_appimage)
+        dest_appimage.chmod(0o755)
+        print(f"Updated AppImage at {dest_appimage}")
+
+        icon_dest = find_existing_icon(app_dir, name)
+        if icon_dest is None:
+            check_zenity()
+            icon_src = zenity_file_selection()
+            icon_dest = app_dir / f"{name}{icon_src.suffix}"
+            shutil.copy2(icon_src, icon_dest)
+            print(f"Icon copied to {icon_dest}")
+        else:
+            print(f"Keeping existing icon at {icon_dest}")
+
+        chown_recursive(app_dir, real_user)
+        print(f"Ownership set to {real_user} for {app_dir}")
+
+        write_desktop_entry(name, dest_appimage, icon_dest, desktop_path, args.sandbox)
+        print(f"Updated desktop entry at {desktop_path}")
+
+        update_zsh_path(app_dir)
+        print(f"\n'{name}' AppImage updated successfully.")
+        return
+
+    check_zenity()
     app_dir.mkdir(parents=True, exist_ok=True)
 
-    dest_appimage = app_dir / f"{name}.AppImage"
     shutil.copy2(appimage_path, dest_appimage)
     dest_appimage.chmod(0o755)
     print(f"Installed AppImage to {dest_appimage}")
@@ -142,23 +231,10 @@ def main():
     shutil.copy2(icon_src, icon_dest)
     print(f"Icon copied to {icon_dest}")
 
-    real_user = get_real_user()
     chown_recursive(app_dir, real_user)
     print(f"Ownership set to {real_user} for {app_dir}")
 
-    exec_line = f"Exec={dest_appimage}\n" if args.sandbox else f"Exec={dest_appimage} --no-sandbox\n"
-    desktop_entry = (
-        "[Desktop Entry]\n"
-        "Type=Application\n"
-        f"Name={name}\n"
-        f"{exec_line}"
-        f"Icon={icon_dest}\n"
-        "Terminal=false\n"
-        f"StartupWMClass={name.lower()}\n"
-        "Categories=Utility;\n"
-    )
-    desktop_path = Path(f"/usr/share/applications/{name}.desktop")
-    desktop_path.write_text(desktop_entry)
+    write_desktop_entry(name, dest_appimage, icon_dest, desktop_path, args.sandbox)
     print(f"Created desktop entry at {desktop_path}")
 
     update_zsh_path(app_dir)
