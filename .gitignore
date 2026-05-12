@@ -1,3 +1,7 @@
 .cursor
 __pycache__
 *.png
+*.log
+*.tmp
+__pycache__/
+.venv/
