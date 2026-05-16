@@ -68,6 +68,14 @@ def chown_recursive(path: Path, user: str):
             shutil.chown(child, user=user, group=user)
 
 
+def assert_safe_app_name(name: str) -> str:
+    if not name:
+        sys.exit("Error: Application name cannot be empty.")
+    if "/" in name or name in (".", ".."):
+        sys.exit("Error: Application name must not be '.' or '..' or contain '/'.")
+    return name
+
+
 def update_zsh_path(app_dir: Path):
     zshrc = get_real_user_home() / ".zshrc"
     export_line = f'export PATH="{app_dir}:$PATH"'
@@ -82,6 +90,24 @@ def update_zsh_path(app_dir: Path):
     with open(zshrc, "a") as f:
         f.write(f"\n{export_line}\n")
     print(f"Added {app_dir} to $PATH in {zshrc}")
+
+
+def remove_zsh_path(app_dir: Path):
+    zshrc = get_real_user_home() / ".zshrc"
+    export_line = f'export PATH="{app_dir}:$PATH"'
+
+    if not zshrc.is_file():
+        return
+
+    text = zshrc.read_text()
+    lines = text.splitlines()
+    if export_line not in lines:
+        return
+
+    new_lines = [ln for ln in lines if ln != export_line]
+    ending = "\n" if text.endswith("\n") else ""
+    zshrc.write_text("\n".join(new_lines) + ending)
+    print(f"Removed {app_dir} from $PATH in {zshrc}")
 
 
 def find_existing_icon(app_dir: Path, name: str) -> Path | None:
@@ -112,6 +138,14 @@ def find_existing_icon(app_dir: Path, name: str) -> Path | None:
     return None
 
 
+def desktop_entry_display_name(name: str) -> str:
+    """Human-facing launcher title for Name=: capitalize the start of each word; keep other letters as given."""
+    s = name.strip()
+    if not s:
+        return s
+    return " ".join((w[0].upper() + w[1:]) if w else w for w in s.split())
+
+
 def write_desktop_entry(
     name: str,
     dest_appimage: Path,
@@ -123,7 +157,7 @@ def write_desktop_entry(
     desktop_entry = (
         "[Desktop Entry]\n"
         "Type=Application\n"
-        f"Name={name}\n"
+        f"Name={desktop_entry_display_name(name)}\n"
         f"{exec_line}"
         f"Icon={icon_dest}\n"
         "Terminal=false\n"
@@ -133,11 +167,38 @@ def write_desktop_entry(
     desktop_path.write_text(desktop_entry)
 
 
+def run_uninstall(name_raw: str) -> None:
+    name = assert_safe_app_name(name_raw.strip())
+    app_dir = Path("/opt") / name
+    desktop_path = Path(f"/usr/share/applications/{name}.desktop")
+
+    had_dir = app_dir.is_dir()
+    had_desktop = desktop_path.is_file()
+
+    if not had_dir and not had_desktop:
+        sys.exit(
+            f"Error: Nothing to remove for '{name}' "
+            f"(no {app_dir} and no {desktop_path})."
+        )
+
+    if had_dir:
+        shutil.rmtree(app_dir)
+        print(f"Removed {app_dir}")
+
+    if had_desktop:
+        desktop_path.unlink()
+        print(f"Removed {desktop_path}")
+
+    remove_zsh_path(app_dir)
+    print(f"\n'{name}' uninstalled.")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=(
             "Install a Linux AppImage under /opt/<name>, add a .desktop launcher, "
-            "and append the app directory to the real user's ~/.zshrc PATH. "
+            "and append the app directory to the real user's ~/.zshrc PATH; or uninstall "
+            "given name (remove /opt/<name> and its .desktop file). "
             "If /opt/<name> already exists (same --name or dialog name), only the "
             "AppImage file is replaced; the icon is reused when present, otherwise "
             "you are prompted to pick one. "
@@ -147,7 +208,9 @@ def main():
         ),
         epilog=(
             "Usage flow (new install):\n"
-            "  1. sudo python3 install-appimage.py /path/to/app.AppImage\n"
+            "  1. sudo install-appimage /path/to/app.AppImage\n"
+            "     (Install the script to /usr/local/bin first: sudo make install — see README if sudo "
+            "reports command not found.)\n"
             "  2. If --name is omitted, enter the display name in the dialog.\n"
             "  3. Pick a PNG, SVG, XPM, or ICO file for the launcher icon.\n"
             "  4. The AppImage is copied to /opt/<name>/, owned by the user who invoked sudo.\n"
@@ -159,12 +222,19 @@ def main():
             "Use --sandbox so the menu launcher runs only the AppImage (no --no-sandbox). "
             "The default is to add --no-sandbox for Electron-style apps that need it.\n"
             "\n"
+            "Uninstall: sudo install-appimage --uninstall <name> removes /opt/<name>, "
+            "/usr/share/applications/<name>.desktop, and the matching PATH line from ~/.zshrc if present.\n"
+            "\n"
             "Requires: root, Zenity when a dialog is needed (e.g. apt install zenity), "
             "and a graphical session for those dialogs."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("appimage", help="Path to the .AppImage file to install")
+    parser.add_argument(
+        "appimage",
+        nargs="?",
+        help="Path to the .AppImage file to install (not used with --uninstall)",
+    )
     parser.add_argument(
         "--name",
         metavar="NAME",
@@ -175,7 +245,26 @@ def main():
         action="store_true",
         help="Do not append --no-sandbox to the .desktop Exec command (default: add --no-sandbox)",
     )
+    parser.add_argument(
+        "--uninstall",
+        metavar="NAME",
+        help="Remove /opt/NAME, /usr/share/applications/NAME.desktop, and the matching ~/.zshrc PATH line",
+    )
     args = parser.parse_args()
+
+    if args.uninstall is not None:
+        if args.appimage is not None:
+            parser.error("Do not pass an AppImage path when using --uninstall.")
+        if args.name is not None:
+            parser.error("--name is not used with --uninstall (use --uninstall NAME).")
+        if args.sandbox:
+            parser.error("--sandbox is not used with --uninstall.")
+        check_root()
+        run_uninstall(args.uninstall)
+        return
+
+    if args.appimage is None:
+        parser.error("the following arguments are required: appimage")
 
     check_root()
 
@@ -184,10 +273,10 @@ def main():
         sys.exit(f"Error: '{appimage_path}' is not a valid file.")
 
     if args.name:
-        name = args.name
+        name = assert_safe_app_name(args.name)
     else:
         check_zenity()
-        name = zenity_entry("Enter a name for the application:")
+        name = assert_safe_app_name(zenity_entry("Enter a name for the application:"))
 
     app_dir = Path(f"/opt/{name}")
     dest_appimage = app_dir / f"{name}.AppImage"

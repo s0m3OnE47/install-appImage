@@ -16,31 +16,76 @@ A Python script that installs AppImage files as proper desktop applications on L
 - **Zenity** — install with `sudo apt install zenity` if not already present
 - **zsh** — the script appends to `~/.zshrc`
 
+## Putting `install-appimage` on your PATH
+
+Clone or unpack this repo, then either:
+
+- **Recommended (works with `sudo`):** install into `/usr/local/bin`, which is part of sudo’s default `secure_path`:
+
+  ```bash
+  cd /path/to/install-appImage
+  sudo make install
+  ```
+
+  After that, `sudo install-appimage …` resolves the command normally.
+
+- **Ad hoc:** run it by absolute path, or from the repo:
+
+  ```bash
+  sudo ./install-appimage ~/Downloads/App.AppImage --name MyApp
+  ```
+
+### Why `sudo install-appimage` says “command not found”
+
+`sudo` does not use your interactive shell `$PATH`; it uses a fixed list (often `/usr/local/bin`, `/usr/bin`, …). If `install-appimage` lives only in e.g. `~/.local/bin`, sudo will not find it.
+
+Until you run `sudo make install`, you can still invoke the script explicitly:
+
+```bash
+sudo "$(command -v install-appimage)" ~/Downloads/App.AppImage --name MyApp
+```
+
+Your shell resolves `command -v` **before** sudo runs, so sudo executes the full path.
+
 ## Usage
 
 ```bash
-sudo python3 install-appimage.py <path-to-appimage> [--name <app-name>]
+sudo install-appimage <path-to-appimage> [--name <app-name>] [--sandbox]
+
+sudo install-appimage --uninstall <app-name>
 ```
 
 ### Arguments
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `<path-to-appimage>` | Yes | Path to the `.AppImage` file to install |
+| `<path-to-appimage>` | Yes* | Path to the `.AppImage` file to install |
 | `--name <app-name>` | No | Name for the application. If omitted, a dialog box will prompt for it. |
+| `--sandbox` | No | Omit `--no-sandbox` from the `.desktop` launcher `Exec` line (default adds it). |
+| `--uninstall <app-name>` | No** | Remove `/opt/<app-name>/`, `/usr/share/applications/<app-name>.desktop`, and the matching `PATH` line in `~/.zshrc` if present. |
+
+\* Required for install; omit when using `--uninstall`.
+
+\*\* Mutually exclusive with the AppImage path and with `--name` / `--sandbox`.
 
 ### Examples
 
 Install with an explicit name:
 
 ```bash
-sudo python3 install-appimage.py ~/Downloads/Obsidian.AppImage --name Obsidian
+sudo install-appimage ~/Downloads/Obsidian.AppImage --name Obsidian
 ```
 
 Install without a name (a dialog will ask for it):
 
 ```bash
-sudo python3 install-appimage.py ~/Downloads/SomeApp.AppImage
+sudo install-appimage ~/Downloads/SomeApp.AppImage
+```
+
+Uninstall an app previously installed as `Obsidian`:
+
+```bash
+sudo install-appimage --uninstall Obsidian
 ```
 
 ## What Gets Created
