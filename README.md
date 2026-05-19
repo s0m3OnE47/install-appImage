@@ -94,7 +94,7 @@ Given `--name MyApp`:
 
 ```
 /opt/MyApp/
-├── MyApp.AppImage      # executable AppImage
+├── MyApp               # executable AppImage (no .AppImage suffix)
 └── MyApp.png           # icon (extension matches the file you selected)
 
 /usr/share/applications/MyApp.desktop   # desktop entry
@@ -106,7 +106,7 @@ The `.desktop` file contents:
 [Desktop Entry]
 Type=Application
 Name=MyApp
-Exec=/opt/MyApp/MyApp.AppImage --no-sandbox
+Exec=/opt/MyApp/MyApp --no-sandbox
 Icon=/opt/MyApp/MyApp.png
 Terminal=false
 StartupWMClass=myapp

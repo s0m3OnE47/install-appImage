@@ -216,7 +216,7 @@ def main():
             "  4. The AppImage is copied to /opt/<name>/, owned by the user who invoked sudo.\n"
             "\n"
             "Updating: run again with the new .AppImage file and the same name (--name or dialog). "
-            "The script overwrites /opt/<name>/<name>.AppImage, fixes permissions and ownership, "
+            "The script overwrites /opt/<name>/<name>, fixes permissions and ownership, "
             "refreshes the .desktop entry, and only asks for an icon if none is found under /opt/<name>.\n"
             "\n"
             "Use --sandbox so the menu launcher runs only the AppImage (no --no-sandbox). "
@@ -279,7 +279,7 @@ def main():
         name = assert_safe_app_name(zenity_entry("Enter a name for the application:"))
 
     app_dir = Path(f"/opt/{name}")
-    dest_appimage = app_dir / f"{name}.AppImage"
+    dest_appimage = app_dir / name
     desktop_path = Path(f"/usr/share/applications/{name}.desktop")
     real_user = get_real_user()
 
@@ -287,6 +287,11 @@ def main():
         shutil.copy2(appimage_path, dest_appimage)
         dest_appimage.chmod(0o755)
         print(f"Updated AppImage at {dest_appimage}")
+
+        legacy_appimage = app_dir / f"{name}.AppImage"
+        if legacy_appimage.is_file():
+            legacy_appimage.unlink()
+            print(f"Removed legacy {legacy_appimage}")
 
         icon_dest = find_existing_icon(app_dir, name)
         if icon_dest is None:
