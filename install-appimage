@@ -167,6 +167,13 @@ def write_desktop_entry(
     desktop_path.write_text(desktop_entry)
 
 
+def update_desktop_database():
+    if shutil.which("update-desktop-database") is None:
+        return
+    subprocess.run(["update-desktop-database"], check=True)
+    print("Ran update-desktop-database")
+
+
 def run_uninstall(name_raw: str) -> None:
     name = assert_safe_app_name(name_raw.strip())
     app_dir = Path("/opt") / name
@@ -310,6 +317,7 @@ def main():
         print(f"Updated desktop entry at {desktop_path}")
 
         update_zsh_path(app_dir)
+        update_desktop_database()
         print(f"\n'{name}' AppImage updated successfully.")
         return
 
@@ -332,6 +340,7 @@ def main():
     print(f"Created desktop entry at {desktop_path}")
 
     update_zsh_path(app_dir)
+    update_desktop_database()
 
     print(f"\n'{name}' installed successfully.")
 
