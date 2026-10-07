@@ -13,6 +13,23 @@ def check_root():
         sys.exit("Error: This script must be run as root (use sudo).")
 
 
+def replace_executable(source: Path, destination: Path) -> None:
+    """Install source over destination even if destination is currently running.
+
+    Direct overwrite (e.g. shutil.copy2) raises ETXTBSY when the target binary
+    is mapped for execution. Copy to a same-dir tempfile, then os.replace().
+    """
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    tmp = destination.with_name(f".{destination.name}.tmp.{os.getpid()}")
+    try:
+        shutil.copy2(source, tmp)
+        tmp.chmod(0o755)
+        os.replace(tmp, destination)
+    finally:
+        if tmp.exists():
+            tmp.unlink(missing_ok=True)
+
+
 def check_zenity():
     if shutil.which("zenity") is None:
         sys.exit("Error: Zenity is not installed. Install it with: sudo apt install zenity")
@@ -291,8 +308,7 @@ def main():
     real_user = get_real_user()
 
     if app_dir.is_dir():
-        shutil.copy2(appimage_path, dest_appimage)
-        dest_appimage.chmod(0o755)
+        replace_executable(appimage_path, dest_appimage)
         print(f"Updated AppImage at {dest_appimage}")
 
         legacy_appimage = app_dir / f"{name}.AppImage"
@@ -324,8 +340,7 @@ def main():
     check_zenity()
     app_dir.mkdir(parents=True, exist_ok=True)
 
-    shutil.copy2(appimage_path, dest_appimage)
-    dest_appimage.chmod(0o755)
+    replace_executable(appimage_path, dest_appimage)
     print(f"Installed AppImage to {dest_appimage}")
 
     icon_src = zenity_file_selection()
