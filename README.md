@@ -18,12 +18,21 @@ A Python script that installs AppImage files as proper desktop applications on L
 
 ## Putting `install-appimage` on your PATH
 
-Clone or unpack this repo, then either:
+Clone into `/tmp`, move to `/opt`, then install:
+
+```bash
+git clone https://github.com/s0m3OnE47/install-appImage /tmp/install-appImage
+sudo mv /tmp/install-appImage /opt/install-appImage
+cd /opt/install-appImage
+sudo make install
+```
+
+Or, if the repo is already present:
 
 - **Recommended (works with `sudo`):** install into `/usr/local/bin`, which is part of sudo’s default `secure_path`:
 
   ```bash
-  cd /path/to/install-appImage
+  cd /opt/install-appImage
   sudo make install
   ```
 
